@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Camera Streaming</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden; /* Hindari scrollbar */
+        }
+        #video-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        #canvas {
+            width: 40%;
+            height: 60%;
+/*             transform: scaleX(-1); Untuk membalikkan gambar horizontal jika perlu */
+        }
+        @media screen and (max-width: 600px) {
+        #canvas {
+            width: 100%; /* Mengisi lebar layar */
+            height: 40%; /* Menyesuaikan tinggi sesuai proporsi */
+        }
+        }
+
+        .transparent-text {
+            opacity: 0.13; /* Nilai antara 0 (sepenuhnya transparan) hingga 1 (tidak transparan) */
+        }
+    </style>
+</head>
+<body>
+    <div id="video-container">
+        <canvas class="video-stream" id="canvas"></canvas>
+    </div>
+    <div class="transparent-text">&nbsp;created by: @miftahulhuda520 (instagram)</div>
+    <script type="text/javascript">
+        var canvas = document.getElementById('canvas');
+        var ctx = canvas.getContext('2d');
+        var video = document.createElement('video');
+
+        video.autoplay = true;
+        video.playsinline = true;
+
+        navigator.mediaDevices.getUserMedia({ video: true })
+            .then(function(stream) {
+                video.srcObject = stream;
+            })
+            .catch(function(err) {
+                console.error('Error accessing the webcam: ', err);
+            });
+
+        video.addEventListener('play', function() {
+            var $this = this; // cache
+            (function loop() {
+                if (!$this.paused && !$this.ended) {
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    ctx.drawImage($this, 0, 0, canvas.width, canvas.height);
+                    sendData(canvas.toDataURL('image/jpeg'));
+                }
+                setTimeout(loop, 1000 / 30); // drawing at 30fps
+            })();
+        });
+
+        function sendData(dataUrl) {
+            fetch('/process_frame', {
+                method: 'POST',
+                body: JSON.stringify({image: dataUrl}),
+                headers:{
+                    'Content-Type': 'application/json'
+                }
+            }).then(response => response.text())
+            .then(data => {
+                // Process detection result
+                drawDetection(data);
+            })
+            .catch(error => console.error('Error:', error));
+        }
+
+        function drawDetection(data) {
+            // Parse detection data (assuming it's JSON format)
+            var detectionData = JSON.parse(data);
+
+            // Draw bounding boxes and labels on the canvas
+            detectionData.forEach(function(detectedObject) {
+                ctx.beginPath();
+                ctx.rect(detectedObject.x, detectedObject.y, detectedObject.width, detectedObject.height);
+                ctx.lineWidth = 2;
+                ctx.strokeStyle = 'red';
+                ctx.fillStyle = 'red';
+                ctx.stroke();
+                // Menyesuaikan posisi label untuk kamera yang dibalik
+                   // Menyesuaikan posisi label untuk kamera yang dibalik
+                var labelX = detectedObject.x + detectedObject.width; // Geser ke kanan objek
+                var labelY = detectedObject.y + detectedObject.height; // Geser ke bawah objek
+                
+                // Memutar tulisan label secara vertikal
+                ctx.save();
+                ctx.translate(labelX, labelY); // Pindahkan origin ke pojok kanan bawah objek
+                ctx.scale(-1, 1); // Balikkan tulisan secara horizontal
+                ctx.fillText(detectedObject.label, 0, 0); // Tulis label
+                ctx.restore();
+            });
+        }
+    </script>
+</body>
+</html>
