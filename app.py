@@ -1,42 +1,73 @@
-from flask import Flask, render_template, Response
-from ultralytics import YOLO
+from flask import Flask, render_template, request, jsonify
 import cv2
+import numpy as np
+import base64
+from ultralytics import YOLO
 
 app = Flask(__name__)
 model = YOLO("last (3).pt")
-camera = cv2.VideoCapture(0)
 
 def prediksi(image, model):
+    # Proses deteksi objek menggunakan model dan gambar yang diberikan
     results = model.predict(image)
+    
+    # Inisialisasi daftar untuk menyimpan hasil deteksi
+    detected_objects = []
+    
     for result in results:
-        boxes = result.boxes.cpu().numpy() # get boxes on cpu in numpy
-        for box in boxes: # iterate boxes
-            r = box.xyxy[0].astype(int) # get corner points as int
-            cv2.rectangle(image, (r[0], r[1]), (r[2], r[3]), (0,255,0), 2) # draw boxes on image
+        boxes = result.boxes.cpu().numpy() # Mendapatkan kotak pembatas objek dalam format numpy array
+        
+        # Iterasi melalui setiap kotak pembatas
+        for box in boxes:
+            # Mendapatkan koordinat sudut kotak pembatas sebagai integer
+            r = box.xyxy[0].astype(int)
+            r = r.tolist()
+            # Mendapatkan kelas objek dan mengonversi ke label yang sesuai
             cls = result.names[int(box.cls[0])]
-            cv2.putText(image, str(cls), (r[0] + 5, r[1] - 10), cv2.FONT_HERSHEY_DUPLEX, 1, (0, 255, 255), 2)
-    return image
+            if str(cls) == "玫瑰" or str(cls) == "玫瑰 0.88":
+                cls = "mawar"
+            elif str(cls) == "向日葵 0.92":
+                cls = "sunflower"
+            
+            # Membuat objek deteksi dengan properti yang sesuai
+            detected_object = {
+                "x": r[0],
+                "y": r[1],
+                "width": r[2] - r[0],
+                "height": r[3] - r[1],
+                "label": str(cls)
+            }
+            
+            # Menambahkan objek deteksi ke dalam daftar hasil deteksi
+            detected_objects.append(detected_object)
+    
+    # Mengembalikan daftar hasil deteksi
+    return detected_objects
 
-def generate_frames():
-    while True:
-        success, frame = camera.read()
 
-        if not success:
-            break
-        else:
-            frame = cv2.flip(frame, 1)
-            frame = prediksi(frame, model)
-            ret, buffer = cv2.imencode('.jpg', frame)
-            frame = buffer.tobytes()
-            yield (b'--frame\r\n' b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
 
 @app.route('/')
 def index():
     return render_template('index.html')
 
-@app.route('/video_feed')
-def video_feed():
-    return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
+@app.route('/process_frame', methods=['POST'])
+def process_frame():
+    # Ambil data gambar dari request JSON
+    data = request.get_json()
+    image_data = data['image']
+
+    # Decode data gambar dari base64
+    image_bytes = base64.b64decode(image_data.split(',')[1])
+    nparr = np.frombuffer(image_bytes, np.uint8)
+    image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+    # Proses gambar menggunakan model prediksi
+    detection_results = prediksi(image, model)
+    
+    return jsonify(detection_results)
+
 
 if __name__ == '__main__':
     app.run(debug=True)
+
+
